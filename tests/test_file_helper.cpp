@@ -99,3 +99,70 @@ TEST_CASE("file_helper_split_by_extension", "[file_helper::split_by_extension()]
     test_split_ext(SPDLOG_FILENAME_T("."), SPDLOG_FILENAME_T("."), SPDLOG_FILENAME_T(""));
     test_split_ext(SPDLOG_FILENAME_T("..txt"), SPDLOG_FILENAME_T("."), SPDLOG_FILENAME_T(".txt"));
 }
+
+TEST_CASE("file_event_handlers", "[file_helper]")
+{
+    enum class flags
+    {
+        before_open,
+        after_open,
+        before_close,
+        after_close
+    };
+    prepare_logdir();
+
+    spdlog::filename_t test_filename = SPDLOG_FILENAME_T(TEST_FILENAME);
+    // define event handles that update vector of flags when called
+    std::vector<flags> events;
+    spdlog::file_event_handlers handlers;
+    handlers.before_open = [&](spdlog::filename_t filename) {
+        REQUIRE(filename == test_filename);
+        events.push_back(flags::before_open);
+    };
+    handlers.after_open = [&](spdlog::filename_t filename, std::FILE *fstream) {
+        REQUIRE(filename == test_filename);
+        REQUIRE(fstream);
+        fputs("after_open\n", fstream);
+        events.push_back(flags::after_open);
+    };
+    handlers.before_close = [&](spdlog::filename_t filename, std::FILE *fstream) {
+        REQUIRE(filename == test_filename);
+        REQUIRE(fstream);
+        fputs("before_close\n", fstream);
+        events.push_back(flags::before_close);
+    };
+    handlers.after_close = [&](spdlog::filename_t filename) {
+        REQUIRE(filename == test_filename);
+        events.push_back(flags::after_close);
+    };
+    {
+        spdlog::details::file_helper helper{handlers};
+        REQUIRE(events.empty());
+
+        helper.open(test_filename);
+        REQUIRE(events == std::vector<flags>{flags::before_open, flags::after_open});
+
+        events.clear();
+        helper.close();
+        REQUIRE(events == std::vector<flags>{flags::before_close, flags::after_close});
+        REQUIRE(file_contents(TEST_FILENAME) == "after_open\nbefore_close\n");
+
+        helper.reopen(true);
+        events.clear();
+    }
+    // make sure that the file_helper destrcutor calls the close callbacks if needed
+    REQUIRE(events == std::vector<flags>{flags::before_close, flags::after_close});
+    REQUIRE(file_contents(TEST_FILENAME) == "after_open\nbefore_close\n");
+}
+
+TEST_CASE("file_helper_open", "[file_helper]")
+{
+    prepare_logdir();
+    spdlog::filename_t target_filename = SPDLOG_FILENAME_T(TEST_FILENAME);
+    file_helper helper;
+    helper.open(target_filename);
+    helper.close();
+
+    target_filename += SPDLOG_FILENAME_T("/invalid");
+    REQUIRE_THROWS_AS(helper.open(target_filename), spdlog::spdlog_ex);
+}

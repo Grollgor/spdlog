@@ -191,13 +191,19 @@ void binary_example()
 }
 
 // Log a vector of numbers
-
-#include "spdlog/fmt/bundled/ranges.h"
+#ifndef SPDLOG_USE_STD_FORMAT
+#    include "spdlog/fmt/ranges.h"
 void vector_example()
 {
     std::vector<int> vec = {1, 2, 3};
     spdlog::info("Vector example: {}", vec);
 }
+
+#else
+void vector_example() {}
+#endif
+
+// ! DSPDLOG_USE_STD_FORMAT
 
 // Compile time log levels.
 // define SPDLOG_ACTIVE_LEVEL to required level (e.g. SPDLOG_LEVEL_TRACE)
@@ -248,20 +254,35 @@ void multi_sink_example()
     logger.info("this message should not appear in the console, only in the file");
 }
 
-// User defined types logging by implementing operator<<
+// User defined types logging
 struct my_type
 {
-    int i;
-    template<typename OStream>
-    friend OStream &operator<<(OStream &os, const my_type &c)
+    int i = 0;
+    explicit my_type(int i)
+        : i(i){};
+};
+
+
+// Using a namespace alias like fmt_lib is not allowed when extending an existing namespace,
+// but the correct namespace can still be selected with the SPDLOG_USE_STD_FORMAT macro.
+#ifdef SPDLOG_USE_STD_FORMAT
+    namespace std {
+#else
+    namespace fmt {
+#endif
+template<>
+struct formatter<my_type> : formatter<std::string>
+{
+    auto format(my_type my, format_context &ctx) -> decltype(ctx.out())
     {
-        return os << "[my_type i=" << c.i << "]";
+        return format_to(ctx.out(), "[my_type i={}]", my.i);
     }
 };
+}
 
 void user_defined_example()
 {
-    spdlog::info("user defined type: {}", my_type{14});
+    spdlog::info("user defined type: {}", my_type(14));
 }
 
 // Custom error handler. Will be triggered on log failure.
@@ -347,11 +368,10 @@ void replace_default_logger_example()
 
     auto new_logger = spdlog::basic_logger_mt("new_default_logger", "logs/new-default-log.txt", true);
     spdlog::set_default_logger(new_logger);
-    spdlog::set_level(spdlog::level::info); 
+    spdlog::set_level(spdlog::level::info);
     spdlog::debug("This message should not be displayed!");
-    spdlog::set_level(spdlog::level::trace); 
+    spdlog::set_level(spdlog::level::trace);
     spdlog::debug("This message should be displayed..");
 
     spdlog::set_default_logger(old_logger);
 }
-
