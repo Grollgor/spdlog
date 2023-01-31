@@ -61,6 +61,9 @@ option(SPDLOG_BUILD_SHARED "Build shared library" OFF)
 # precompiled headers option
 option(SPDLOG_ENABLE_PCH "Build static or shared library using precompiled header to speed up compilation time" OFF)
 
+# build position independent code
+option(SPDLOG_BUILD_PIC "Build position independent code (-fPIC)" OFF)
+
 # example options
 option(SPDLOG_BUILD_EXAMPLE "Build example" ${SPDLOG_MASTER_PROJECT})
 option(SPDLOG_BUILD_EXAMPLE_HO "Build header only example" OFF)
@@ -79,8 +82,9 @@ option(SPDLOG_SANITIZE_ADDRESS "Enable address sanitizer in tests" OFF)
 option(SPDLOG_BUILD_WARNINGS "Enable compiler warnings" OFF)
 
 # install options
+option(SPDLOG_SYSTEM_INCLUDES "Include as system headers (skip for clang-tidy)." OFF)
 option(SPDLOG_INSTALL "Generate the install target" ${SPDLOG_MASTER_PROJECT})
-option(SPDLOG_USE_STD_FORMAT "Use std::format instead of fmt library. No compile-time format string checking." OFF)
+option(SPDLOG_USE_STD_FORMAT "Use std::format instead of fmt library." OFF)
 option(SPDLOG_FMT_EXTERNAL "Use external fmt library instead of bundled" OFF)
 option(SPDLOG_FMT_EXTERNAL_HO "Use external fmt header-only library instead of bundled" OFF)
 option(SPDLOG_NO_EXCEPTIONS "Compile with -fno-exceptions. Call abort() on any spdlog exceptions" OFF)
@@ -132,6 +136,10 @@ if(SPDLOG_TIDY)
     message(STATUS "Enabled clang-tidy")
 endif()
 
+if(SPDLOG_BUILD_PIC)
+    set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+endif()
+
 find_package(Threads REQUIRED)
 message(STATUS "Build type: " ${CMAKE_BUILD_TYPE})
 # ---------------------------------------------------------------------------------------
@@ -140,7 +148,7 @@ message(STATUS "Build type: " ${CMAKE_BUILD_TYPE})
 set(SPDLOG_SRCS src/spdlog.cpp src/stdout_sinks.cpp src/color_sinks.cpp src/file_sinks.cpp src/async.cpp src/cfg.cpp)
 
 if(NOT SPDLOG_USE_STD_FORMAT AND NOT SPDLOG_FMT_EXTERNAL AND NOT SPDLOG_FMT_EXTERNAL_HO)
-    list(APPEND SPDLOG_SRCS src/fmt.cpp)
+    list(APPEND SPDLOG_SRCS src/bundled_fmtlib_format.cpp)
 endif()
 
 if(SPDLOG_BUILD_SHARED OR BUILD_SHARED_LIBS)
@@ -163,8 +171,14 @@ endif()
 
 add_library(spdlog::spdlog ALIAS spdlog)
 
+set(SPDLOG_INCLUDES_LEVEL "")
+if(SPDLOG_SYSTEM_INCLUDES)
+    set(SPDLOG_INCLUDES_LEVEL "SYSTEM")
+endif()
+
+
 target_compile_definitions(spdlog PUBLIC SPDLOG_COMPILED_LIB)
-target_include_directories(spdlog PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}/include>"
+target_include_directories(spdlog ${SPDLOG_INCLUDES_LEVEL} PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}/include>"
                                          "$<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>")
 target_link_libraries(spdlog PUBLIC Threads::Threads)
 spdlog_enable_warnings(spdlog)
@@ -183,7 +197,7 @@ endif()
 add_library(spdlog_header_only INTERFACE)
 add_library(spdlog::spdlog_header_only ALIAS spdlog_header_only)
 
-target_include_directories(spdlog_header_only INTERFACE "$<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}/include>"
+target_include_directories(spdlog_header_only ${SPDLOG_INCLUDES_LEVEL} INTERFACE "$<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}/include>"
                                                         "$<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>")
 target_link_libraries(spdlog_header_only INTERFACE Threads::Threads)
 
@@ -322,6 +336,10 @@ if(SPDLOG_INSTALL)
     # ---------------------------------------------------------------------------------------
     # Install CMake config files
     # ---------------------------------------------------------------------------------------
+    export(
+      TARGETS spdlog
+      NAMESPACE spdlog::
+      FILE "${CMAKE_CURRENT_BINARY_DIR}/${config_targets_file}")
     install(EXPORT spdlog DESTINATION ${export_dest_dir} NAMESPACE spdlog:: FILE ${config_targets_file})
 
     include(CMakePackageConfigHelpers)
